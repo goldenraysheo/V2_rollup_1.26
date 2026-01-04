@@ -862,7 +862,7 @@ function writeARHeader_(sheet) {
   sheet.getRange(1, 1).setFontSize(14).setFontWeight('bold');
 
   // Row 2: Instructions
-  const instructions = 'This sheet shows accounts receivable aging data from all branch workbooks. Click "Refresh AR Collections" to update. Use filters to view specific weeks or branches.';
+  const instructions = 'This sheet shows accounts receivable aging data from all branch workbooks. Click "Refresh ARs" to update. Use filters to view specific weeks or branches.';
   sheet.getRange(2, 1).setValue(instructions);
   sheet.getRange(2, 1, 1, 9).merge();
   sheet.getRange(2, 1).setWrap(true).setFontSize(9).setFontStyle('italic');
