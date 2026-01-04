@@ -657,6 +657,10 @@ function refreshARCollections() {
 
   ss.toast('Starting AR Collections refresh...', 'Progress', -1);
 
+  // Force flush to ensure all changes are saved before reading
+  SpreadsheetApp.flush();
+  Utilities.sleep(500); // Small delay to ensure Drive sync
+
   const arSheet = upsertSheet_(ss, 'ARs (Collections)');
 
   ss.toast('Finding branch workbooks...', 'Progress', -1);
@@ -666,6 +670,7 @@ function refreshARCollections() {
 
   const rows = [];
   let processedCount = 0;
+  const debugLog = []; // Track processing details
 
   books.forEach(book => {
     processedCount++;
@@ -674,6 +679,8 @@ function refreshARCollections() {
 
     // Get all sheets in this workbook
     const sheets = book.getSheets();
+    let foundKPISheets = 0;
+    let totalARRows = 0;
 
     sheets.forEach(sheet => {
       const sheetName = sheet.getName();
@@ -682,16 +689,27 @@ function refreshARCollections() {
       const match = sheetName.match(/^(\d{2})\s+Weekly KPIs$/i);
       if (!match) return;
 
+      foundKPISheets++;
       const branch = match[1]; // Extract branch number
 
       // Find AR header row
       const arHeaderRow = findARHeaderRow_(sheet);
-      if (!arHeaderRow) return; // No AR section found, skip
+      if (!arHeaderRow) {
+        debugLog.push(`${bookName} - ${sheetName}: No AR header found`);
+        return; // No AR section found, skip
+      }
 
       // Extract AR data
       const arData = extractARData_(sheet, arHeaderRow, branch);
+      totalARRows += arData.length;
       rows.push(...arData);
+
+      debugLog.push(`${bookName} - ${sheetName}: Found ${arData.length} AR records`);
     });
+
+    if (foundKPISheets === 0) {
+      debugLog.push(`${bookName}: No Weekly KPI sheets found`);
+    }
   });
 
   ss.toast('Writing data to AR Collections sheet...', 'Progress', -1);
@@ -737,6 +755,11 @@ function refreshARCollections() {
 
   ss.toast('Formatting AR Collections sheet...', 'Progress', -1);
   formatARSheet_(arSheet, header.length, rows.length);
+
+  // Log debug information to console
+  Logger.log('=== AR Collections Debug Log ===');
+  debugLog.forEach(entry => Logger.log(entry));
+  Logger.log(`Total: ${rows.length} AR records from ${books.length} workbooks`);
 
   ss.toast(`Complete! Processed ${rows.length} week records from ${books.length} branches.`, 'Success ✓', 5);
 }
