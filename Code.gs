@@ -44,13 +44,16 @@ function rebuildMasterData() {
   master.clear();
   master.showSheet();
 
+  // Write header with title and instructions
+  writeVarianceHeader_(master);
+
   const header = [
     'Year','Month','Period',
     'Branch','Dept','Dept Name',
     'Account','Account Name','Type',
     'Actual','Budget','Variance','Last Year','Comments'
   ];
-  master.getRange(1, 1, 1, header.length).setValues([header]);
+  master.getRange(4, 1, 1, header.length).setValues([header]);
 
   ss.toast('Loading department names...', 'Progress', -1);
   const deptMap = loadDeptNames_(ss);
@@ -108,7 +111,7 @@ function rebuildMasterData() {
   ss.toast('Writing data to master sheet...', 'Progress', -1);
 
   if (rows.length) {
-    master.getRange(2, 1, rows.length, header.length).setValues(rows);
+    master.getRange(5, 1, rows.length, header.length).setValues(rows);
   }
 
   ss.toast('Formatting master sheet...', 'Progress', -1);
@@ -125,40 +128,60 @@ function rebuildMasterData() {
 }
 
 /*************************************************************
+ * WRITE VARIANCE HEADER
+ *************************************************************/
+function writeVarianceHeader_(sheet) {
+  // Row 1: Title
+  sheet.getRange(1, 1).setValue('Monthly Variances - Master');
+  sheet.getRange(1, 1).setFontSize(14).setFontWeight('bold');
+
+  // Row 2: Instructions
+  const instructions = 'This sheet shows detailed variances from all branch workbooks. Click "Refresh Variances" to update. Use filters to view specific months, branches, departments, or accounts.';
+  sheet.getRange(2, 1).setValue(instructions);
+  sheet.getRange(2, 1, 1, 14).merge();
+  sheet.getRange(2, 1).setWrap(true).setFontSize(9).setFontStyle('italic');
+
+  // Row 3: Blank (space for button)
+}
+
+/*************************************************************
  * FORMAT MASTER SHEET
  *************************************************************/
 function formatMasterSheet_(master, colCount) {
   const lastRow = master.getLastRow();
-  if (lastRow < 1) return;
+  if (lastRow < 4) return;
 
-  master.setFrozenRows(1);
+  // Freeze header rows (1-4)
+  master.setFrozenRows(4);
   master.getDataRange().setFontFamily('Verdana').setFontSize(9);
-  master.getRange(1, 1, 1, colCount)
+
+  // Bold header row (row 4)
+  master.getRange(4, 1, 1, colCount)
         .setFontWeight('bold')
         .setBorder(false, false, true, false, false, false, null, SpreadsheetApp.BorderStyle.MEDIUM);
 
   const existingFilter = master.getFilter();
   if (existingFilter) existingFilter.remove();
-  master.getRange(1, 1, lastRow, colCount).createFilter();
+  master.getRange(4, 1, lastRow - 3, colCount).createFilter();
 
   // Force TEXT formatting for Branch (4), Dept (5), Account (7)
-  if (lastRow > 1) {
-    master.getRange(2, 4, lastRow - 1, 1).setNumberFormat('@');
-    master.getRange(2, 5, lastRow - 1, 1).setNumberFormat('@');
-    master.getRange(2, 7, lastRow - 1, 1).setNumberFormat('@');
+  if (lastRow > 4) {
+    master.getRange(5, 4, lastRow - 4, 1).setNumberFormat('@');
+    master.getRange(5, 5, lastRow - 4, 1).setNumberFormat('@');
+    master.getRange(5, 7, lastRow - 4, 1).setNumberFormat('@');
 
     const moneyFmt = '#,##0.00';
-    master.getRange(2,10,lastRow-1,1).setNumberFormat(moneyFmt);
-    master.getRange(2,11,lastRow-1,1).setNumberFormat(moneyFmt);
-    master.getRange(2,12,lastRow-1,1).setNumberFormat(moneyFmt);
-    master.getRange(2,13,lastRow-1,1).setNumberFormat(moneyFmt);
+    master.getRange(5,10,lastRow-4,1).setNumberFormat(moneyFmt);
+    master.getRange(5,11,lastRow-4,1).setNumberFormat(moneyFmt);
+    master.getRange(5,12,lastRow-4,1).setNumberFormat(moneyFmt);
+    master.getRange(5,13,lastRow-4,1).setNumberFormat(moneyFmt);
 
-    master.getRange(2,1,lastRow-1,colCount).setBorder(
+    master.getRange(5,1,lastRow-4,colCount).setBorder(
       true, true, true, true, true, true, null, SpreadsheetApp.BorderStyle.DOTTED
     );
   }
 
-  master.getRange(1,14,lastRow,1).setWrap(true);
+  master.getRange(4,14,lastRow-3,1).setWrap(true);
   master.setColumnWidth(14, 320);
 
   // Manual column widths for better performance (replaces autoResizeColumns)
@@ -519,7 +542,7 @@ function writeExecutiveSummaryHeader_(sheet) {
   sheet.getRange(1, 1).setFontSize(14).setFontWeight('bold');
 
   // Row 2: Instructions
-  const instructions = 'This sheet shows executive summaries from all branch workbooks. Click "Refresh Executive Summaries" to update. Use filters to view specific months or branches.';
+  const instructions = 'This sheet shows executive summaries from all branch workbooks. Click "Refresh Summaries" to update. Use filters to view specific months or branches.';
   sheet.getRange(2, 1).setValue(instructions);
   sheet.getRange(2, 1, 1, 10).merge();
   sheet.getRange(2, 1).setWrap(true).setFontSize(9).setFontStyle('italic');
