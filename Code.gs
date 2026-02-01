@@ -1250,15 +1250,15 @@ function formatMembershipSheet_(sheet, colCount, rowCount) {
   }
 
   // Set column widths
-  sheet.setColumnWidth(1, 70);   // Branch
-  sheet.setColumnWidth(2, 60);   // Week
+  sheet.setColumnWidth(1, 80);   // Branch
+  sheet.setColumnWidth(2, 70);   // Week
   sheet.setColumnWidth(3, 90);   // Date
   sheet.setColumnWidth(4, 140);  // Membership Units
   sheet.setColumnWidth(5, 70);   // Joins
   sheet.setColumnWidth(6, 80);   // Renews
   sheet.setColumnWidth(7, 70);   // Terms
   sheet.setColumnWidth(8, 160);  // Cumulative Net Joins
-  sheet.setColumnWidth(9, 90);   // Retention
+  sheet.setColumnWidth(9, 100);  // Retention
 
   // Hide gridlines
   sheet.setHiddenGridlines(true);
