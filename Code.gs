@@ -15,6 +15,7 @@ function onOpen() {
     .addItem('Refresh Monthly Details', 'refreshAllData')
     .addItem('Refresh Executive Summaries', 'refreshExecutiveSummaries')
     .addItem('Refresh AR Collections', 'refreshARCollections')
+    .addItem('Refresh Membership', 'refreshMembershipTrends')
     .addToUi();
 }
 
@@ -960,6 +961,304 @@ function formatARSheet_(sheet, colCount, rowCount) {
   sheet.setColumnWidth(7, 100);  // 91-120 Days
   sheet.setColumnWidth(8, 110);  // Over 120 Days
   sheet.setColumnWidth(9, 100);  // Total
+
+  // Hide gridlines
+  sheet.setHiddenGridlines(true);
+}
+
+/*************************************************************
+ * REFRESH MEMBERSHIP TRENDS
+ *************************************************************/
+function refreshMembershipTrends() {
+  const ss = SpreadsheetApp.getActive();
+
+  ss.toast('Starting Membership Trends refresh...', 'Progress', -1);
+
+  SpreadsheetApp.flush();
+  Utilities.sleep(500);
+
+  const memSheet = upsertSheet_(ss, 'Membership Trends');
+
+  ss.toast('Finding branch workbooks...', 'Progress', -1);
+  const books = getBranchSpreadsheets_();
+
+  ss.toast(`Processing ${books.length} branch workbook${books.length !== 1 ? 's' : ''}...`, 'Progress', -1);
+
+  const rows = [];
+  let processedCount = 0;
+  const debugLog = [];
+
+  books.forEach(book => {
+    processedCount++;
+    const bookName = book.getName();
+    ss.toast(`Processing ${bookName} (${processedCount} of ${books.length})...`, 'Progress', -1);
+
+    const sheets = book.getSheets();
+    let foundKPISheets = 0;
+
+    sheets.forEach(sheet => {
+      const sheetName = sheet.getName();
+
+      // Look for sheets matching pattern "## Weekly KPIs"
+      const match = sheetName.match(/^(\d{2})\s+Weekly KPIs$/i);
+      if (!match) return;
+
+      foundKPISheets++;
+      const branch = match[1];
+
+      // Check row 1 for "Membership Units" to identify membership branches
+      if (!isMembershipKPISheet_(sheet)) {
+        debugLog.push(`${bookName} - ${sheetName}: Not a membership KPI sheet, skipping`);
+        return;
+      }
+
+      // Extract membership data
+      const memData = extractMembershipData_(sheet, branch);
+      rows.push(...memData);
+
+      debugLog.push(`${bookName} - ${sheetName}: Found ${memData.length} membership records`);
+    });
+
+    if (foundKPISheets === 0) {
+      debugLog.push(`${bookName}: No Weekly KPI sheets found`);
+    }
+  });
+
+  ss.toast('Writing data to Membership Trends sheet...', 'Progress', -1);
+
+  if (rows.length === 0) {
+    memSheet.clear();
+    writeMembershipHeader_(memSheet);
+    ss.toast('No membership data found in branch workbooks.', 'Complete', 3);
+    return;
+  }
+
+  // Sort by week (descending), then branch
+  rows.sort((a, b) => {
+    if (a.week !== b.week) return b.week - a.week;
+    return a.branch.localeCompare(b.branch);
+  });
+
+  // Clear and write
+  memSheet.clear();
+  writeMembershipHeader_(memSheet);
+
+  const header = [
+    'Branch', 'Week', 'Date',
+    'Membership Units', 'Joins', 'Renews', 'Terms',
+    'Cumulative Net Joins', 'Retention'
+  ];
+
+  // Write header at row 4
+  memSheet.getRange(4, 1, 1, header.length).setValues([header]);
+
+  // Write data starting at row 5
+  const outRows = rows.map(r => [
+    r.branch,
+    r.week,
+    r.date,
+    r.membershipUnits,
+    r.joins,
+    r.renews,
+    r.terms,
+    r.cumulativeNetJoins,
+    r.retention
+  ]);
+
+  memSheet.getRange(5, 1, outRows.length, header.length).setValues(outRows);
+
+  ss.toast('Formatting Membership Trends sheet...', 'Progress', -1);
+  formatMembershipSheet_(memSheet, header.length, rows.length);
+
+  // Log debug information to console
+  Logger.log('=== Membership Trends Debug Log ===');
+  debugLog.forEach(entry => Logger.log(entry));
+  Logger.log(`Total: ${rows.length} membership records from ${books.length} workbooks`);
+
+  ss.toast(`Complete! Processed ${rows.length} week records from ${books.length} branches.`, 'Success ✓', 5);
+}
+
+/*************************************************************
+ * DETECT MEMBERSHIP KPI SHEET
+ *************************************************************/
+function isMembershipKPISheet_(sheet) {
+  const lc = sheet.getLastColumn();
+  if (lc < 1) return false;
+
+  const row1 = sheet.getRange(1, 1, 1, lc).getDisplayValues()[0];
+  return row1.some(cell => String(cell).trim() === 'Membership Units');
+}
+
+/*************************************************************
+ * EXTRACT MEMBERSHIP DATA
+ *************************************************************/
+function extractMembershipData_(sheet, branch) {
+  const lr = sheet.getLastRow();
+  const lc = sheet.getLastColumn();
+  if (lr < 4) return []; // Data starts at row 4
+
+  const row1 = sheet.getRange(1, 1, 1, lc).getDisplayValues()[0];
+
+  // Find column indices from row 1 headers
+  const idxMemUnits = row1.findIndex(cell => String(cell).trim() === 'Membership Units');
+  const idxJoins = row1.findIndex(cell => String(cell).trim() === 'Joins');
+  const idxRenews = row1.findIndex(cell => String(cell).trim() === 'Renews');
+  const idxTerms = row1.findIndex(cell => String(cell).trim() === 'Terms');
+  const idxCumNetJoins = row1.findIndex(cell => String(cell).trim().startsWith('Cumulative'));
+  const idxRetention = row1.findIndex(cell => String(cell).trim().startsWith('Retention'));
+
+  if (idxMemUnits === -1 || idxJoins === -1 || idxTerms === -1) {
+    return []; // Missing required columns
+  }
+
+  // Get all rows from row 4 onwards (row 3 is the "Week" header row)
+  const vals = sheet.getRange(4, 1, lr - 3, lc).getDisplayValues();
+  const out = [];
+
+  vals.forEach(row => {
+    // Column A has week number
+    const weekRaw = String(row[0] || '').trim();
+    const week = parseInt(weekRaw);
+    if (isNaN(week) || week <= 0) return;
+
+    // Column B has date
+    const date = String(row[1] || '').trim();
+    if (!date) return;
+
+    const membershipUnits = numFromCell_(row[idxMemUnits]);
+    const joins = numFromCell_(row[idxJoins]);
+    const renews = idxRenews !== -1 ? numFromCell_(row[idxRenews]) : 0;
+    const terms = numFromCell_(row[idxTerms]);
+    const cumulativeNetJoins = idxCumNetJoins !== -1 ? numFromCell_(row[idxCumNetJoins]) : 0;
+    const retention = idxRetention !== -1 ? pctFromCell_(row[idxRetention]) : 0;
+
+    // Skip rows with no data entered
+    if (membershipUnits === 0 && joins === 0 && terms === 0) return;
+
+    out.push({
+      branch: "'" + branch.padStart(2, '0'),
+      week: week,
+      date: date,
+      membershipUnits: membershipUnits,
+      joins: joins,
+      renews: renews,
+      terms: terms,
+      cumulativeNetJoins: cumulativeNetJoins,
+      retention: retention
+    });
+  });
+
+  return out;
+}
+
+/*************************************************************
+ * PERCENTAGE HELPER
+ *************************************************************/
+function pctFromCell_(v) {
+  if (v === '' || v === null || v === undefined) return 0;
+  const s = String(v).trim();
+  if (s.indexOf('%') !== -1) {
+    const n = Number(s.replace(/%/g, '').trim());
+    return isNaN(n) ? 0 : n / 100;
+  }
+  const n = Number(s);
+  return isNaN(n) ? 0 : n;
+}
+
+/*************************************************************
+ * WRITE MEMBERSHIP HEADER (Rows 1-3)
+ *************************************************************/
+function writeMembershipHeader_(sheet) {
+  // Row 1: Title
+  sheet.getRange(1, 1).setValue('Membership Trends');
+  sheet.getRange(1, 1).setFontSize(14).setFontWeight('bold');
+
+  // Row 2: Instructions
+  const instructions = 'This sheet shows weekly membership KPI data from all membership branch workbooks. Click "Refresh Membership" to update. Use filters to view specific weeks or branches.';
+  sheet.getRange(2, 1).setValue(instructions);
+  sheet.getRange(2, 1, 1, 9).merge();
+  sheet.getRange(2, 1).setWrap(true).setFontSize(9).setFontStyle('italic');
+
+  // Row 3: Blank (space for button)
+}
+
+/*************************************************************
+ * FORMAT MEMBERSHIP SHEET
+ *************************************************************/
+function formatMembershipSheet_(sheet, colCount, rowCount) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 4) return;
+
+  // Freeze header rows (1-4)
+  sheet.setFrozenRows(4);
+
+  // Font for entire sheet
+  sheet.getDataRange().setFontFamily('Verdana').setFontSize(9);
+  sheet.getDataRange().setFontColor('#434343');
+
+  // Bold header row (row 4)
+  sheet.getRange(4, 1, 1, colCount).setFontWeight('bold');
+
+  // Thick border under header row
+  sheet.getRange(4, 1, 1, colCount).setBorder(
+    false, false, true, false, false, false,
+    '#999999',
+    SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+  );
+
+  // Add filter to data
+  const existingFilter = sheet.getFilter();
+  if (existingFilter) existingFilter.remove();
+  if (lastRow >= 4) {
+    sheet.getRange(4, 1, lastRow - 3, colCount).createFilter();
+  }
+
+  // Format Branch column (A, column 1) as text
+  if (lastRow >= 5) {
+    sheet.getRange(5, 1, lastRow - 4, 1).setNumberFormat('@');
+  }
+
+  // Format number columns (D-H, columns 4-8) as whole numbers with commas
+  if (lastRow >= 5) {
+    const numFmt = '#,##0';
+    for (let col = 4; col <= 8; col++) {
+      sheet.getRange(5, col, lastRow - 4, 1).setNumberFormat(numFmt);
+    }
+  }
+
+  // Format Retention column (I, column 9) as percentage
+  if (lastRow >= 5) {
+    sheet.getRange(5, 9, lastRow - 4, 1).setNumberFormat('0%');
+  }
+
+  // Light grey dotted borders between cells (data rows)
+  if (lastRow >= 5) {
+    sheet.getRange(5, 1, lastRow - 4, colCount).setBorder(
+      true, true, true, true, true, true,
+      '#d9d9d9',
+      SpreadsheetApp.BorderStyle.DOTTED
+    );
+  }
+
+  // Thin border around whole table (header + data)
+  if (lastRow >= 4) {
+    sheet.getRange(4, 1, lastRow - 3, colCount).setBorder(
+      true, true, true, true, false, false,
+      '#999999',
+      SpreadsheetApp.BorderStyle.SOLID
+    );
+  }
+
+  // Set column widths
+  sheet.setColumnWidth(1, 70);   // Branch
+  sheet.setColumnWidth(2, 60);   // Week
+  sheet.setColumnWidth(3, 90);   // Date
+  sheet.setColumnWidth(4, 120);  // Membership Units
+  sheet.setColumnWidth(5, 70);   // Joins
+  sheet.setColumnWidth(6, 80);   // Renews
+  sheet.setColumnWidth(7, 70);   // Terms
+  sheet.setColumnWidth(8, 140);  // Cumulative Net Joins
+  sheet.setColumnWidth(9, 90);   // Retention
 
   // Hide gridlines
   sheet.setHiddenGridlines(true);
