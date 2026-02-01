@@ -1197,7 +1197,7 @@ function formatMembershipSheet_(sheet, colCount, rowCount) {
   sheet.getDataRange().setFontColor('#434343');
 
   // Bold header row (row 4)
-  sheet.getRange(4, 1, 1, colCount).setFontWeight('bold');
+  sheet.getRange(4, 1, 1, colCount).setFontWeight('bold').setWrap(true);
 
   // Thick border under header row
   sheet.getRange(4, 1, 1, colCount).setBorder(
@@ -1253,11 +1253,11 @@ function formatMembershipSheet_(sheet, colCount, rowCount) {
   sheet.setColumnWidth(1, 70);   // Branch
   sheet.setColumnWidth(2, 60);   // Week
   sheet.setColumnWidth(3, 90);   // Date
-  sheet.setColumnWidth(4, 120);  // Membership Units
+  sheet.setColumnWidth(4, 140);  // Membership Units
   sheet.setColumnWidth(5, 70);   // Joins
   sheet.setColumnWidth(6, 80);   // Renews
   sheet.setColumnWidth(7, 70);   // Terms
-  sheet.setColumnWidth(8, 140);  // Cumulative Net Joins
+  sheet.setColumnWidth(8, 160);  // Cumulative Net Joins
   sheet.setColumnWidth(9, 90);   // Retention
 
   // Hide gridlines
